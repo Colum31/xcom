@@ -29,6 +29,7 @@ import os
 import serial
 import subprocess
 from nonblock import KBHit
+from serialfunc import SerialFunc
 
 d_port = '/dev/ttyS0'  # standart port
 d_baud = 115200  # standart baud-rate
@@ -47,7 +48,7 @@ def print_serial_info():  # druckt informationen ueber die verbindung
     global print_queue
     global print_data_rdy_flag
 
-    print_queue.put(("Nutze Port: {}\n\u001b[2KBaudrate betraegt {}".format(ser.name, ser.baudrate), "s", "SER_INFO"))
+    print_queue.put(("Nutze Port: {}\n\u001b[2KBaudrate betraegt {}".format(port, baud), "s", "SER_INFO"))
     print_data_rdy_flag.set()
     return
 
@@ -72,7 +73,6 @@ def print_read_keyboard(keyboard_queue):
 def parse_input(erhalten):  # verarbeitet das eingelesene
     """Steuert den Programmablauf, mithilfe der ausgelesenen Daten der Tastatur."""
 
-    global verbunden
     global print_data_rdy_flag
     global send_data_flag
     global serial_send_queue
@@ -91,7 +91,7 @@ def parse_input(erhalten):  # verarbeitet das eingelesene
         print_queue.put(("Nichts gesendet!", "u"))
         return -1
 
-    if erhalten[0] != '!' and verbunden:
+    if erhalten[0] != '!' and ser.connected:
         serial_send_queue.put(erhalten + '\n')
         send_data_flag.set()
         return 0
@@ -132,9 +132,8 @@ def parse_input(erhalten):  # verarbeitet das eingelesene
                 print_data_rdy_flag.set()
                 return 2
 
-            serial_kill(ser)
+            ser.change_baud(neue_baud)
             baud = neue_baud
-            ser = serial_init(port, neue_baud)
             print_serial_info()
             print_queue.put(("Aendere Baud-Rate zu {}".format(neue_baud), 'i'))
             print_data_rdy_flag.set()
@@ -158,9 +157,8 @@ def parse_input(erhalten):  # verarbeitet das eingelesene
 
             test_ser.close()
 
-            serial_kill(ser)
+            ser.change_port(neuer_port)
             port = neuer_port
-            ser = serial_init(port, baud)
             print_serial_info()
             print_queue.put(("Aendere Port zu {}".format(port), 'i'))
             print_data_rdy_flag.set()
@@ -178,12 +176,12 @@ def parse_input(erhalten):  # verarbeitet das eingelesene
 
         elif befehl == "!h":  # Hangup: beeende Serielle Verbindung
 
-            if not verbunden:
+            if not ser.connected:
                 print_queue.put(("Nicht seriell verbunden: Beenden einer seriellen Verindung nicht moeglich!", "u"))
                 return 2
 
             print_queue.put(("Beende Serielle Verbindung", "i"))
-            serial_kill(ser)
+            ser.kill()
             print_queue.put(("Nutze Port: ----------\n\u001b[2KBaudrate betraegt ----------", "s", "SER_INFO"))
             return 2
 
@@ -394,7 +392,6 @@ os.system("tput smcup")
 print_clear()
 
 zeilen = print_get_zeilen()  # zeilen des terminalfensters
-verbunden = False
 
 port = d_port
 baud = d_baud
@@ -416,7 +413,7 @@ print_kill_flag = threading.Event()
 print_data_rdy_flag = threading.Event()
 send_data_flag = threading.Event()
 
-ser = serial_init(d_port, d_baud)  # serielles objekt
+ser = SerialFunc(port, baud, serial_kill_flag, send_data_flag, serial_recv_queue, serial_send_queue)
 
 keyboardThread = threading.Thread(target=print_read_keyboard, args=(term_input_queue,), daemon=True)
 keyboardThread.start()
@@ -425,8 +422,9 @@ printThread = threading.Thread(target=print_thread, args=(print_kill_flag, print
                                daemon=True)
 printThread.start()
 
-ser_recv_thread_number = serial_recv_thread.native_id
-ser_send_thread_number = serial_send_thread.native_id
+ser_recv_thread_number = 0
+ser_send_thread_number = 0
+
 key_thread_number = keyboardThread.native_id
 main_thread_number = threading.get_native_id()
 print_thread_number = printThread.native_id
@@ -457,7 +455,7 @@ while True:
                 continue
 
             if parse_code == 1:  # beende das programm
-                serial_kill(ser)  # beende serielle Verbindung
+                ser.kill()  # beende serielle Verbindung
 
                 print_kill_flag.set()  # beende den print-Thread
                 print_data_rdy_flag.set()
@@ -485,5 +483,5 @@ while True:
 
     time.sleep(0.001)
 
-ser.close()  # schliesse verbindung
+ser.kill()
 os.system("tput cnorm && tput rmcup")

@@ -1,64 +1,70 @@
+import queue
 import time
 import serial
 import threading
 
 
 class SerialFunc:
+    """Implements the serial functionality."""
 
-    def serial_init(port, baud):  # initialiesiert Serielles Objekt
+    def __init__(self, port, baud, killflag, dataflag, recv_queue, send_queue):
+        """Default Constructor. Creates serial connection and threads."""
+        self.port = port
+        self.baud = baud
+
+        self.killflag = killflag
+        self.dataflag = dataflag
+
+        self.recv_queue = recv_queue
+        self.send_queue = send_queue
+
+        self.recv_thread = None
+        self.send_thread = None
+
+        self.connected = False
+
+        self.ser = self.init(self.port, self.baud)
+
+    def init(self, port, baud):  # initialiesiert Serielles Objekt
         """Initialisiert Threads und die serielle Verbindung."""
 
-        global serial_recv_thread
-        global serial_send_thread
-        global verbunden
-        global serial_recv_queue
-        global serial_send_queue
-        global serial_kill_flag
-        global send_data_flag
         serial_conn = serial.Serial(port, baud)
 
-        serial_recv_thread = threading.Thread(target=serial_listen,
-                                              args=(serial_kill_flag, serial_conn, serial_recv_queue,), daemon=True)
-        serial_recv_thread.start()
+        recv_thread = threading.Thread(target=self.listen,
+                                       args=(self.killflag, serial_conn, self.recv_queue,), daemon=True)
+        recv_thread.start()
+        self.recv_thread = recv_thread
 
-        serial_send_thread = threading.Thread(target=serial_print,
-                                              args=(serial_kill_flag, send_data_flag, serial_conn, serial_send_queue,),
-                                              daemon=True)
-        serial_send_thread.start()
+        send_thread = threading.Thread(target=self.print,
+                                       args=(self.killflag, self.dataflag, serial_conn, self.send_queue,),
+                                       daemon=True)
+        send_thread.start()
+        self.send_thread = send_thread
 
-        verbunden = True
+        self.connected = True
 
         return serial_conn
 
-
-    def serial_kill(serial_conn):  # schliesst die serielle Verbindung
+    def kill(self):  # schliesst die serielle Verbindung
         """Beendet die serielle Verbindung und die dazugehoerigen Threads."""
 
-        global verbunden
-        global serial_kill_flag
-        global send_data_flag
-
-        global serial_recv_thread
-        global serial_send_thread
-
-        if not verbunden:
+        if not self.connected:
             return
 
-        send_data_flag.set()
-        serial_kill_flag.set()
+        self.dataflag.set()
+        self.killflag.set()
 
-        serial_recv_thread.join()
-        serial_send_thread.join()
-        serial_conn.close()
+        self.recv_thread.join()
+        self.send_thread.join()
+        self.ser.close()
 
-        serial_kill_flag.clear()
+        self.killflag.clear()
 
-        verbunden = False
+        self.connected = False
 
         return
 
-
-    def serial_print(stop_flag, data_flag, ser, q_send):  # sendet das eingegebene
+    def print(self, stop_flag, data_flag, ser, q_send):  # sendet das eingegebene
         """Sendet seriell Daten."""
         while not stop_flag.is_set():
             data_flag.wait()
@@ -71,8 +77,7 @@ class SerialFunc:
 
         return
 
-
-    def serial_listen(stop_flag, ser, q_recv):  # liesst das serielle objekt (trennzeichen \n)
+    def listen(self, stop_flag, ser, q_recv):  # liesst das serielle objekt (trennzeichen \n)
         """Liest Daten aus der seriellen Verbindung aus."""
 
         erhalten = ""
@@ -102,4 +107,14 @@ class SerialFunc:
             time.sleep(0.001)
         return
 
+    def change_baud(self, baud):
+        """Erstellt eine neue serielle Verbindung, mit der angegebenen Baudrate"""
+        self.kill()
+        self.init(self.port, baud)
+        self.baud = baud
 
+    def change_port(self, port):
+        """Erstellt eine neue serielle Verbindung, mit der angegebenen Baudrate"""
+        self.kill()
+        self.init(port, self.baud)
+        self.port = port
