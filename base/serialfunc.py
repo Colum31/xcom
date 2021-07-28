@@ -9,6 +9,9 @@ class SerialFunc:
 
     def __init__(self, port, baud, killflag, dataflag, recv_queue, send_queue):
         """Standart Konstruktor."""
+
+        # alles wird auf standart werte gesetzt, wenn Wert noch nicht bekannt
+
         self.port = port
         self.baud = baud
 
@@ -25,6 +28,8 @@ class SerialFunc:
 
         self.recv_thread_n = 0
         self.send_thread_n = 0
+
+        # erstelle hier die serielle Verbindung
 
         self.ser = self.init(self.port, self.baud)
 
