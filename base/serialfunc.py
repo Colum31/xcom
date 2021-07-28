@@ -5,10 +5,10 @@ import threading
 
 
 class SerialFunc:
-    """Implements the serial functionality."""
+    """Implementiert serielle Funktionalitaet."""
 
     def __init__(self, port, baud, killflag, dataflag, recv_queue, send_queue):
-        """Default Constructor. Creates serial connection and threads."""
+        """Standart Konstruktor."""
         self.port = port
         self.baud = baud
 
@@ -22,6 +22,9 @@ class SerialFunc:
         self.send_thread = None
 
         self.connected = False
+
+        self.recv_thread_n = 0
+        self.send_thread_n = 0
 
         self.ser = self.init(self.port, self.baud)
 
@@ -42,6 +45,9 @@ class SerialFunc:
         self.send_thread = send_thread
 
         self.connected = True
+
+        self.send_thread_n = send_thread.native_id
+        self.recv_thread_n = recv_thread.native_id
 
         return serial_conn
 

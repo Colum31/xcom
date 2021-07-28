@@ -422,8 +422,8 @@ printThread = threading.Thread(target=print_thread, args=(print_kill_flag, print
                                daemon=True)
 printThread.start()
 
-ser_recv_thread_number = 0
-ser_send_thread_number = 0
+ser_recv_thread_number = ser.recv_thread_n
+ser_send_thread_number = ser.send_thread_n
 
 key_thread_number = keyboardThread.native_id
 main_thread_number = threading.get_native_id()
