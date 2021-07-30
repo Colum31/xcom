@@ -7,126 +7,54 @@ Author: colum31
 A small terminal-type application to communicate via serial.
 """
 
-# TODO:  -fix cursor flashing
+# TODO: FIX
+#       -fix cursor flashing
 #       -optimize code (especially serial read)
 #       -fix clearing process, when there is input
+#       -fix !x behaviour after !h
 #       -refactor code
+
+# TODO: IMPLEMENT
+#       -support for more special keys CTRL, DELETE, ESC ...
+#       -mute feature
+#       -log feature
+#       -commmand history feature
 #       -config files
 #       -scripting with arduino firmware support
 
+import serial
 import threading
 import queue
 import time
 import os
-import serial
-import subprocess
-from nonblock import KBHit
+
+from printfunc import PrintFunc
+from serialfunc import SerialFunc
 
 d_port = '/dev/ttyS0'  # standart port
 d_baud = 115200  # standart baud-rate
 
 
-def serial_init(port, baud):  # initialiesiert Serielles Objekt
-    """Initialisiert Threads und die serielle Verbindung."""
-
-    global serial_recv_thread
-    global serial_send_thread
-    global verbunden
-    global serial_recv_queue
-    global serial_send_queue
-    global serial_kill_flag
-    global send_data_flag
-    serial_conn = serial.Serial(port, baud)
-
-    serial_recv_thread = threading.Thread(target=serial_listen,
-                                          args=(serial_kill_flag, serial_conn, serial_recv_queue,), daemon=True)
-    serial_recv_thread.start()
-
-    serial_send_thread = threading.Thread(target=serial_print,
-                                          args=(serial_kill_flag, send_data_flag, serial_conn, serial_send_queue,),
-                                          daemon=True)
-    serial_send_thread.start()
-
-    verbunden = True
-
-    return serial_conn
-
-
-def serial_kill(serial_conn):  # schliesst die serielle Verbindung
-    """Beendet die serielle Verbindung und die dazugehoerigen Threads."""
-
-    global verbunden
-    global serial_kill_flag
-    global send_data_flag
-
-    global serial_recv_thread
-    global serial_send_thread
-
-    if not verbunden:
-        return
-
-    send_data_flag.set()
-    serial_kill_flag.set()
-
-    serial_recv_thread.join()
-    serial_send_thread.join()
-    serial_conn.close()
-
-    serial_kill_flag.clear()
-
-    verbunden = False
-
-    return
-
-
-def print_get_zeilen():  # ueberprueft das terminal um zeilenzahl zu erhalten
-    """Gibt zurueck, wie viele Zeilen es im Terminalfenster gibt."""
-
-    p = (subprocess.check_output(["tput lines"], shell=True))
-    return int(p)
-
-
-def print_serial_info():  # druckt informationen ueber die verbindung
-    """Gibt Informationen ueber die serielle Verbindung aus."""
-
-    global print_queue
-    global print_data_rdy_flag
-
-    print_queue.put(("Nutze Port: {}\n\u001b[2KBaudrate betraegt {}".format(ser.name, ser.baudrate), "s", "SER_INFO"))
-    print_data_rdy_flag.set()
-    return
-
-
-def print_clear():
-    """Setzt das Terminalfenster zurueck."""
-
-    os.system("tput clear")
-    return
-
-
-def print_read_keyboard(keyboard_queue):
-    """Liest die Eingabe der Tastatur aus."""
-    kb = KBHit()
-
-    while True:
-        if kb.kbhit():
-            c = kb.getch()
-            keyboard_queue.put(c)
+class ParseCodes:
+    """Stellt enums fuer Rueckgabewerte bereit."""
+    SKIP = -1
+    SEND = 0
+    QUIT = 1
+    CLEAR = 2
+    SCRIPT = 3
 
 
 def parse_input(erhalten):  # verarbeitet das eingelesene
     """Steuert den Programmablauf, mithilfe der ausgelesenen Daten der Tastatur."""
 
-    global verbunden
+    global mon
     global print_data_rdy_flag
     global send_data_flag
     global serial_send_queue
-    global command_current_term
     global baud
     global port
     global ser
     global dateiname
-
     global ser_recv_thread_number
     global ser_send_thread_number
     global key_thread_number
@@ -134,23 +62,24 @@ def parse_input(erhalten):  # verarbeitet das eingelesene
 
     if erhalten == "":
         print_queue.put(("Nichts gesendet!", "u"))
-        return -1
+        return ParseCodes.SKIP
 
-    if erhalten[0] != '!' and verbunden:
+    if erhalten[0] != '!' and ser.connected:
         serial_send_queue.put(erhalten + '\n')
         send_data_flag.set()
-        return 0
+        return ParseCodes.SEND
+
     elif erhalten[0] == "!":
         befehl = erhalten.split()[0]
 
         if befehl == "!x":  # beende das Programm. Schliesse davor die Verbindung
             print_queue.put(("Beende Programm <3", "u"))
-            return 1
+            return ParseCodes.QUIT
 
         elif befehl == "!c":  # "cleare" das terminal
             print_queue.put(("", "RESET"))
             print_data_rdy_flag.set()
-            return 2
+            return ParseCodes.CLEAR
 
         elif befehl == "!b":  # aendere baud-rate
             try:
@@ -158,32 +87,32 @@ def parse_input(erhalten):  # verarbeitet das eingelesene
             except IndexError:
                 print_queue.put(("Baudrate angeben!", 'u'))
                 print_data_rdy_flag.set()
-                return 2
+                return ParseCodes.CLEAR
 
             if not neue_baud.isdigit():
-                print_queue.put(("Baudrate {} ungueltig!".format(neue_baud), 'u'))
+                print_queue.put(("Baudrate \"{}\" ungueltig!".format(neue_baud), 'u'))
                 print_data_rdy_flag.set()
-                return 2
+                return ParseCodes.CLEAR
 
             neue_baud = int(neue_baud)
 
             if neue_baud > 4000000:
-                print_queue.put(("Baudrate {} ist zu hoch!".format(neue_baud), 'u'))
+                print_queue.put(("Baudrate \"{}\" ist zu hoch!".format(neue_baud), 'u'))
                 print_data_rdy_flag.set()
-                return 2
+                return ParseCodes.CLEAR
 
             if neue_baud == baud:
-                print_queue.put(("Baudrate {} ist bereits gesetzt!".format(neue_baud), 'u'))
+                print_queue.put(("Baudrate \"{}\" ist bereits gesetzt!".format(neue_baud), 'u'))
                 print_data_rdy_flag.set()
-                return 2
+                return ParseCodes.CLEAR
 
-            serial_kill(ser)
+            ser.change_baud(neue_baud)
             baud = neue_baud
-            ser = serial_init(port, neue_baud)
-            print_serial_info()
-            print_queue.put(("Aendere Baud-Rate zu {}".format(neue_baud), 'i'))
+            mon.print_serial_info()
+            get_serial_thread_numbers()
+            print_queue.put(("Aendere Baud-Rate zu \"{}\"".format(neue_baud), 'i'))
             print_data_rdy_flag.set()
-            return 2
+            return ParseCodes.CLEAR
 
         elif befehl == "!p":  # aendere port
             try:
@@ -191,25 +120,25 @@ def parse_input(erhalten):  # verarbeitet das eingelesene
             except IndexError:
                 print_queue.put(("Port angeben!", 'u'))
                 print_data_rdy_flag.set()
-                return 2
+                return ParseCodes.CLEAR
 
             try:
                 test_ser = serial.Serial(neuer_port, baud)
 
             except serial.SerialException:
-                print_queue.put(("Keine serielle Verbindung unter Port {} moeglich".format(neuer_port), 'u'))
+                print_queue.put(("Keine serielle Verbindung unter Port \"{}\" moeglich".format(neuer_port), 'u'))
                 print_data_rdy_flag.set()
-                return 2
+                return ParseCodes.CLEAR
 
             test_ser.close()
 
-            serial_kill(ser)
+            ser.change_port(neuer_port)
             port = neuer_port
-            ser = serial_init(port, baud)
-            print_serial_info()
-            print_queue.put(("Aendere Port zu {}".format(port), 'i'))
+            mon.print_serial_info()
+            get_serial_thread_numbers()
+            print_queue.put(("Aendere Port zu \"{}\"".format(port), 'i'))
             print_data_rdy_flag.set()
-            return 2
+            return ParseCodes.CLEAR
 
         elif befehl == "!d":  # debug: zeige Thread-Nummern an
 
@@ -219,18 +148,22 @@ def parse_input(erhalten):  # verarbeitet das eingelesene
             print_queue.put(("Keyboard Thread hat Nummer: {}".format(key_thread_number), "i"))
             print_queue.put(("Print Thread hat Nummer: {}".format(print_thread_number), "i"))
             print_data_rdy_flag.set()
-            return 2
+            return ParseCodes.CLEAR
 
         elif befehl == "!h":  # Hangup: beeende Serielle Verbindung
 
-            if not verbunden:
+            if not ser.connected:
                 print_queue.put(("Nicht seriell verbunden: Beenden einer seriellen Verindung nicht moeglich!", "u"))
-                return 2
+                print_data_rdy_flag.set()
+                return ParseCodes.CLEAR
 
             print_queue.put(("Beende Serielle Verbindung", "i"))
-            serial_kill(ser)
-            print_queue.put(("Nutze Port: ----------\n\u001b[2KBaudrate betraegt ----------", "s", "SER_INFO"))
-            return 2
+            print_data_rdy_flag.set()
+            ser.kill()
+            mon.print_serial_info()
+            print_data_rdy_flag.set()
+            get_serial_thread_numbers()
+            return ParseCodes.CLEAR
 
         elif befehl == "!s":  # script: lese zu sendende daten aus datei aus
 
@@ -242,208 +175,33 @@ def parse_input(erhalten):  # verarbeitet das eingelesene
 
                 print_queue.put(("Dateiname angeben!", "u"))
                 print_data_rdy_flag.set()
-                return 2
+                return ParseCodes.CLEAR
 
             if os.path.isfile(dateiname):
 
-                return 3
+                return ParseCodes.SCRIPT
             else:
 
-                print_queue.put(("Datei konnte nicht gefunden werden!", "u"))
+                print_queue.put(("Datei \"{}\" konnte nicht gefunden werden!".format(dateiname), "u"))
                 print_data_rdy_flag.set()
-                return 2
+                return ParseCodes.CLEAR
 
         else:  # uengueltiger Befehl
-            print_queue.put(("Ungueltiger Befehl", "u"))
-            return 2
+            print_queue.put(("Ungueltiger Befehl \"{}\"".format(erhalten), "u"))
+            return ParseCodes.CLEAR
 
-    return 2
-
-
-def serial_print(stop_flag, data_flag, ser, q_send):  # sendet das eingegebene
-    """Sendet seriell Daten."""
-    while not stop_flag.is_set():
-        data_flag.wait()
-        try:
-            data = q_send.get(block=True, timeout=1)
-        except queue.Empty:
-            data = ""
-            data_flag.clear()
-        else:
-            ser.write(bytes(data, "utf-8"))
-            data = ""
-    return
+    return ParseCodes.CLEAR
 
 
-def serial_listen(stop_flag, ser, q_recv):  # liesst das serielle objekt (trennzeichen \n)
-    """Liest Daten aus der seriellen Verbindung aus."""
+def get_serial_thread_numbers():
+    """Aktualisiert die Thread Nummern"""
 
-    erhalten = ""
-    falsche_baudrate = False
+    global ser_recv_thread_number
+    global ser_send_thread_number
+    global ser
 
-    while not stop_flag.is_set():
-        if ser.inWaiting() > 0:
-            data = ser.read()
-            if data:
-                try:
-                    data = data.decode("utf-8")
-                except ValueError:
-                    falsche_baudrate = True
-                    erhalten = erhalten + "?"
-                    continue
-
-                if data == '\n':
-                    q_recv.put(erhalten + '\n')
-                    erhalten = ""
-                else:
-                    erhalten = erhalten + data
-        if ser.inWaiting() == 0 and falsche_baudrate:
-            q_recv.put(erhalten + '(nicht dekodierbare Zeichen!)\n')
-            erhalten = ""
-            falsche_baudrate = False
-
-        time.sleep(0.001)
-    return
-
-
-def print_handle_keyboard(c):  # verarbeitet rohe daten von der tastatur
-    """Verarbeitet Rohdaten der Tastatur."""
-    global command_current_term
-    global print_queue
-    global print_data_rdy_flag
-
-    if ord(c) == 127:  # DEL
-
-        print_queue.put(("DEL", "kc"))
-        print_data_rdy_flag.set()
-        command_current_term = command_current_term[:-1]
-        return 0
-
-    if ord(c) == 10:  # ENTER
-        print_queue.put(("ENTER", "kc"))
-        print_data_rdy_flag.set()
-
-        return 1
-
-    command_current_term = command_current_term + str(c)
-    print_queue.put((c, "k"))
-    print_data_rdy_flag.set()
-
-    return 0
-
-
-def print_scroll():  # "scrollt" terminal text
-    """Scrollt das Programmfenster."""
-    print_clear()
-    print_serial_info()
-    return
-
-
-def print_thread(stopflag, data_rdy, print_queue):
-    """Gibt Text auf dem Terminalfenster aus."""
-
-    zeilenanzahl = int(subprocess.check_output(["tput lines"], shell=True))
-    command_zeile = zeilenanzahl - 4
-    command_pos = 0
-    meldung = False
-    max_zeile = command_zeile - 3
-
-    info = "[Info]: "
-    raspberry = "\033[0;31m[Raspi]:\033[0m "
-    arduino = "\033[1;34m[Arduino]:\033[0m "
-
-    display_zeile = 4
-
-    ser_info_string = ""
-    while not stopflag.is_set():
-        # hier NICHTS hin machen
-        if data_rdy.wait():
-
-            print_data = print_queue.get()
-
-            if meldung:
-                os.system("tput cup {} 0".format(command_zeile + 1))
-                print("\u001b[2K", end='\r', flush=True)
-                meldung = False
-
-            if display_zeile >= max_zeile or print_data[1] == "RESET":
-                os.system("tput clear")
-                display_zeile = 4
-                os.system("tput civis && tput cup 0 0")
-                print(ser_info_string)
-
-                continue
-
-            if print_data[1] == "r":  # daten vom raspi
-
-                os.system("tput civis && tput cup {} 0".format(display_zeile))
-                display_zeile = display_zeile + 1
-
-                print(raspberry + print_data[0], end="", flush=True)
-                continue
-
-            elif print_data[1] == "a":  # daten vom arduino drucken
-
-                os.system("tput civis && tput cup {} 0".format(display_zeile))
-                display_zeile = display_zeile + 1
-
-                print(arduino + print_data[0], end="", flush=True)
-
-                continue
-
-            elif print_data[1] == "i":  # info daten in regularer zeile drucken
-
-                os.system("tput civis && tput cup {} 0".format(display_zeile))
-                display_zeile = display_zeile + 1
-
-                print(info + print_data[0], end="", flush=True)
-
-                continue
-
-            elif print_data[1] == "u":  # info daten unter kommandozeile
-
-                os.system("tput civis && tput cup {} 0".format(command_zeile + 1))
-                print(print_data[0], end="", flush=True)
-                meldung = True
-                continue
-
-            elif print_data[1] == "k":  # keyboard drucken
-
-                os.system("tput cnorm && tput cup {} {}".format(command_zeile, command_pos))
-                command_pos = command_pos + 1
-                print(print_data[0], end="", flush=True)
-
-                continue
-
-            elif print_data[1] == "kc":  # keyboard kontrollsequenzen
-
-                if print_data[0] == "ENTER":
-                    os.system("tput cup {} {}".format(command_zeile, command_pos))
-                    print("\u001b[2K", end='\r')
-                    command_pos = 0
-                    continue
-
-                if print_data[0] == "DEL":
-
-                    os.system("tput cup {} {}".format(command_zeile, command_pos))
-                    if command_pos == 0:
-                        continue
-                    print('\b \b', end="", flush=True)
-                    command_pos = command_pos - 1
-                    continue
-
-            elif print_data[1] == "s":  # serielle Info drucken
-
-                if print_data[2] == "SER_INFO":
-                    ser_info_string = str(print_data[0])
-                    os.system("tput civis && tput cup 0 0")
-                    print(ser_info_string, end="", flush=True)
-                    continue
-            if print_queue.qsize() == 0:
-                os.system("tput cup {} {}".format(command_zeile, command_pos))
-                data_rdy.clear()
-
-    return 0
+    ser_recv_thread_number = ser.recv_thread_n
+    ser_send_thread_number = ser.send_thread_n
 
 
 def script_reader(dateiname, q, send_flag):
@@ -481,48 +239,45 @@ def script_reader(dateiname, q, send_flag):
 
 # main
 
-os.system("tput smcup")
-print_clear()
-
-zeilen = print_get_zeilen()  # zeilen des terminalfensters
-verbunden = False
-
 port = d_port
 baud = d_baud
 dateiname = ""
 
-command_current_term = ""  # alle eingegebenen zeichen
 
 serial_send_thread = None
 serial_recv_thread = None
 
-serial_recv_queue = queue.Queue()
+serial_recv_queue = queue.Queue()  # erstelle die Warteschlangen
 serial_send_queue = queue.Queue()
 term_input_queue = queue.Queue()
 print_queue = queue.Queue()
 
-serial_kill_flag = threading.Event()
+serial_kill_flag = threading.Event()  # erstelle die Flags
 print_kill_flag = threading.Event()
 
 print_data_rdy_flag = threading.Event()
 send_data_flag = threading.Event()
 
-ser = serial_init(d_port, d_baud)  # serielles objekt
 
-keyboardThread = threading.Thread(target=print_read_keyboard, args=(term_input_queue,), daemon=True)
-keyboardThread.start()
+ser = SerialFunc(port, baud, serial_kill_flag, send_data_flag, serial_recv_queue, serial_send_queue)
+mon = PrintFunc(print_kill_flag, print_data_rdy_flag, term_input_queue, print_queue, ser)
 
-printThread = threading.Thread(target=print_thread, args=(print_kill_flag, print_data_rdy_flag, print_queue,),
-                               daemon=True)
-printThread.start()
+if not ser.connected:
+    print_queue.put(("Konnte keine Verbindung zum Standartport \"{}\"  oeffnen!".format(d_port), "u"))
+    print_data_rdy_flag.set()
 
-ser_recv_thread_number = serial_recv_thread.native_id
-ser_send_thread_number = serial_send_thread.native_id
-key_thread_number = keyboardThread.native_id
+# speicher alle Nummern der Threads ab
+
+ser_recv_thread_number = 0
+ser_send_thread_number = 0
+
+get_serial_thread_numbers()
+
+key_thread_number = mon.keyboard_thread_n
+print_thread_number = mon.print_thread_n
+
 main_thread_number = threading.get_native_id()
-print_thread_number = printThread.native_id
 
-print_serial_info()
 
 while True:
 
@@ -536,39 +291,36 @@ while True:
         if term_input_queue.qsize() > 0:  # ueberprueft ob etwas eingegeben wurde
 
             c = term_input_queue.get()  # rohdaten
-            term_return_code = print_handle_keyboard(c)  # handlen der rohdaten
+            term_return_code = mon.handle_keyboard(c)  # handlen der rohdaten
 
             if term_return_code == 0:  # falls nicht enter gedrueckt wurde, normal weitermachen
                 continue
             else:  # enter wurde gedrueeckt, verarbeitung des termes
-                parse_code = parse_input(command_current_term)
+                parse_code = parse_input(mon.cur)
 
-            if parse_code == -1:  # nichts interesantes, ueberspringe schleifendurchgang
+            if parse_code == ParseCodes.SKIP:  # nichts interesantes, ueberspringe schleifendurchgang
 
                 continue
 
-            if parse_code == 1:  # beende das programm
-                serial_kill(ser)  # beende serielle Verbindung
+            if parse_code == ParseCodes.QUIT:  # beende das programm
 
-                print_kill_flag.set()  # beende den print-Thread
-                print_data_rdy_flag.set()
-                print_queue.put(("", "", ""))
-                printThread.join()
-
+                ser.kill()
+                mon.kill()
                 break
-            if parse_code == 2:
-                command_current_term = ""
+
+            if parse_code == ParseCodes.CLEAR:
+                mon.cur = ""
                 continue
 
-            if parse_code == 3:
+            if parse_code == ParseCodes.SCRIPT:
                 script_reader(dateiname, serial_send_queue, send_data_flag)
-                command_current_term = ""
+                mon.cur = ""
                 dateiname = ""
                 continue
 
-            print_queue.put((command_current_term, "r"))  # gibt das eingegebene aus und sendet es
+            print_queue.put((mon.cur, "r"))  # gibt das eingegebene aus und sendet es
             print_data_rdy_flag.set()
-            command_current_term = ""  # resetet die zeichenkette
+            mon.cur = ""  # resetet die zeichenkette
 
     except KeyboardInterrupt:  # beende programm bei ^C
         print("KeyboardInterrupt\n")
@@ -576,5 +328,5 @@ while True:
 
     time.sleep(0.001)
 
-ser.close()  # schliesse verbindung
-os.system("tput cnorm && tput rmcup")
+ser.kill()
+mon.restore_screen()
