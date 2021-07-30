@@ -35,6 +35,15 @@ d_port = '/dev/ttyS0'  # standart port
 d_baud = 115200  # standart baud-rate
 
 
+class ParseCodes:
+    """Stellt enums fuer Rueckgabewerte bereit."""
+    SKIP = -1
+    SEND = 0
+    QUIT = 1
+    CLEAR = 2
+    SCRIPT = 3
+
+
 def parse_input(erhalten):  # verarbeitet das eingelesene
     """Steuert den Programmablauf, mithilfe der ausgelesenen Daten der Tastatur."""
 
@@ -46,7 +55,6 @@ def parse_input(erhalten):  # verarbeitet das eingelesene
     global port
     global ser
     global dateiname
-
     global ser_recv_thread_number
     global ser_send_thread_number
     global key_thread_number
@@ -54,23 +62,24 @@ def parse_input(erhalten):  # verarbeitet das eingelesene
 
     if erhalten == "":
         print_queue.put(("Nichts gesendet!", "u"))
-        return -1
+        return ParseCodes.SKIP
 
     if erhalten[0] != '!' and ser.connected:
         serial_send_queue.put(erhalten + '\n')
         send_data_flag.set()
-        return 0
+        return ParseCodes.SEND
+
     elif erhalten[0] == "!":
         befehl = erhalten.split()[0]
 
         if befehl == "!x":  # beende das Programm. Schliesse davor die Verbindung
             print_queue.put(("Beende Programm <3", "u"))
-            return 1
+            return ParseCodes.QUIT
 
         elif befehl == "!c":  # "cleare" das terminal
             print_queue.put(("", "RESET"))
             print_data_rdy_flag.set()
-            return 2
+            return ParseCodes.CLEAR
 
         elif befehl == "!b":  # aendere baud-rate
             try:
@@ -78,31 +87,32 @@ def parse_input(erhalten):  # verarbeitet das eingelesene
             except IndexError:
                 print_queue.put(("Baudrate angeben!", 'u'))
                 print_data_rdy_flag.set()
-                return 2
+                return ParseCodes.CLEAR
 
             if not neue_baud.isdigit():
-                print_queue.put(("Baudrate {} ungueltig!".format(neue_baud), 'u'))
+                print_queue.put(("Baudrate \"{}\" ungueltig!".format(neue_baud), 'u'))
                 print_data_rdy_flag.set()
-                return 2
+                return ParseCodes.CLEAR
 
             neue_baud = int(neue_baud)
 
             if neue_baud > 4000000:
-                print_queue.put(("Baudrate {} ist zu hoch!".format(neue_baud), 'u'))
+                print_queue.put(("Baudrate \"{}\" ist zu hoch!".format(neue_baud), 'u'))
                 print_data_rdy_flag.set()
-                return 2
+                return ParseCodes.CLEAR
 
             if neue_baud == baud:
-                print_queue.put(("Baudrate {} ist bereits gesetzt!".format(neue_baud), 'u'))
+                print_queue.put(("Baudrate \"{}\" ist bereits gesetzt!".format(neue_baud), 'u'))
                 print_data_rdy_flag.set()
-                return 2
+                return ParseCodes.CLEAR
 
             ser.change_baud(neue_baud)
             baud = neue_baud
             mon.print_serial_info()
-            print_queue.put(("Aendere Baud-Rate zu {}".format(neue_baud), 'i'))
+            get_serial_thread_numbers()
+            print_queue.put(("Aendere Baud-Rate zu \"{}\"".format(neue_baud), 'i'))
             print_data_rdy_flag.set()
-            return 2
+            return ParseCodes.CLEAR
 
         elif befehl == "!p":  # aendere port
             try:
@@ -110,24 +120,25 @@ def parse_input(erhalten):  # verarbeitet das eingelesene
             except IndexError:
                 print_queue.put(("Port angeben!", 'u'))
                 print_data_rdy_flag.set()
-                return 2
+                return ParseCodes.CLEAR
 
             try:
                 test_ser = serial.Serial(neuer_port, baud)
 
             except serial.SerialException:
-                print_queue.put(("Keine serielle Verbindung unter Port {} moeglich".format(neuer_port), 'u'))
+                print_queue.put(("Keine serielle Verbindung unter Port \"{}\" moeglich".format(neuer_port), 'u'))
                 print_data_rdy_flag.set()
-                return 2
+                return ParseCodes.CLEAR
 
             test_ser.close()
 
             ser.change_port(neuer_port)
             port = neuer_port
             mon.print_serial_info()
-            print_queue.put(("Aendere Port zu {}".format(port), 'i'))
+            get_serial_thread_numbers()
+            print_queue.put(("Aendere Port zu \"{}\"".format(port), 'i'))
             print_data_rdy_flag.set()
-            return 2
+            return ParseCodes.CLEAR
 
         elif befehl == "!d":  # debug: zeige Thread-Nummern an
 
@@ -137,18 +148,22 @@ def parse_input(erhalten):  # verarbeitet das eingelesene
             print_queue.put(("Keyboard Thread hat Nummer: {}".format(key_thread_number), "i"))
             print_queue.put(("Print Thread hat Nummer: {}".format(print_thread_number), "i"))
             print_data_rdy_flag.set()
-            return 2
+            return ParseCodes.CLEAR
 
         elif befehl == "!h":  # Hangup: beeende Serielle Verbindung
 
             if not ser.connected:
                 print_queue.put(("Nicht seriell verbunden: Beenden einer seriellen Verindung nicht moeglich!", "u"))
-                return 2
+                print_data_rdy_flag.set()
+                return ParseCodes.CLEAR
 
             print_queue.put(("Beende Serielle Verbindung", "i"))
+            print_data_rdy_flag.set()
             ser.kill()
-            print_queue.put(("Nutze Port: ----------\n\u001b[2KBaudrate betraegt ----------", "s", "SER_INFO"))
-            return 2
+            mon.print_serial_info()
+            print_data_rdy_flag.set()
+            get_serial_thread_numbers()
+            return ParseCodes.CLEAR
 
         elif befehl == "!s":  # script: lese zu sendende daten aus datei aus
 
@@ -160,22 +175,33 @@ def parse_input(erhalten):  # verarbeitet das eingelesene
 
                 print_queue.put(("Dateiname angeben!", "u"))
                 print_data_rdy_flag.set()
-                return 2
+                return ParseCodes.CLEAR
 
             if os.path.isfile(dateiname):
 
-                return 3
+                return ParseCodes.SCRIPT
             else:
 
-                print_queue.put(("Datei konnte nicht gefunden werden!", "u"))
+                print_queue.put(("Datei \"{}\" konnte nicht gefunden werden!".format(dateiname), "u"))
                 print_data_rdy_flag.set()
-                return 2
+                return ParseCodes.CLEAR
 
         else:  # uengueltiger Befehl
-            print_queue.put(("Ungueltiger Befehl", "u"))
-            return 2
+            print_queue.put(("Ungueltiger Befehl \"{}\"".format(erhalten), "u"))
+            return ParseCodes.CLEAR
 
-    return 2
+    return ParseCodes.CLEAR
+
+
+def get_serial_thread_numbers():
+    """Aktualisiert die Thread Nummern"""
+
+    global ser_recv_thread_number
+    global ser_send_thread_number
+    global ser
+
+    ser_recv_thread_number = ser.recv_thread_n
+    ser_send_thread_number = ser.send_thread_n
 
 
 def script_reader(dateiname, q, send_flag):
@@ -221,12 +247,12 @@ dateiname = ""
 serial_send_thread = None
 serial_recv_thread = None
 
-serial_recv_queue = queue.Queue() # erstelle die Warteschlangen
+serial_recv_queue = queue.Queue()  # erstelle die Warteschlangen
 serial_send_queue = queue.Queue()
 term_input_queue = queue.Queue()
 print_queue = queue.Queue()
 
-serial_kill_flag = threading.Event() # erstelle die Flags
+serial_kill_flag = threading.Event()  # erstelle die Flags
 print_kill_flag = threading.Event()
 
 print_data_rdy_flag = threading.Event()
@@ -234,13 +260,18 @@ send_data_flag = threading.Event()
 
 
 ser = SerialFunc(port, baud, serial_kill_flag, send_data_flag, serial_recv_queue, serial_send_queue)
-mon = PrintFunc(print_kill_flag, print_data_rdy_flag, term_input_queue ,print_queue, ser)
+mon = PrintFunc(print_kill_flag, print_data_rdy_flag, term_input_queue, print_queue, ser)
 
+if not ser.connected:
+    print_queue.put(("Konnte keine Verbindung zum Standartport \"{}\"  oeffnen!".format(d_port), "u"))
+    print_data_rdy_flag.set()
 
 # speicher alle Nummern der Threads ab
 
-ser_recv_thread_number = ser.recv_thread_n
-ser_send_thread_number = ser.send_thread_n
+ser_recv_thread_number = 0
+ser_send_thread_number = 0
+
+get_serial_thread_numbers()
 
 key_thread_number = mon.keyboard_thread_n
 print_thread_number = mon.print_thread_n
@@ -267,21 +298,21 @@ while True:
             else:  # enter wurde gedrueeckt, verarbeitung des termes
                 parse_code = parse_input(mon.cur)
 
-            if parse_code == -1:  # nichts interesantes, ueberspringe schleifendurchgang
+            if parse_code == ParseCodes.SKIP:  # nichts interesantes, ueberspringe schleifendurchgang
 
                 continue
 
-            if parse_code == 1:  # beende das programm
+            if parse_code == ParseCodes.QUIT:  # beende das programm
 
                 ser.kill()
                 mon.kill()
                 break
 
-            if parse_code == 2:
+            if parse_code == ParseCodes.CLEAR:
                 mon.cur = ""
                 continue
 
-            if parse_code == 3:
+            if parse_code == ParseCodes.SCRIPT:
                 script_reader(dateiname, serial_send_queue, send_data_flag)
                 mon.cur = ""
                 dateiname = ""

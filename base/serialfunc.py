@@ -29,9 +29,14 @@ class SerialFunc:
         self.recv_thread_n = 0
         self.send_thread_n = 0
 
-        # erstelle hier die serielle Verbindung
+        self.ser = None
 
-        self.ser = self.init(self.port, self.baud)
+        # erstelle hier die serielle Verbindung
+        try:
+            self.ser = self.init(self.port, self.baud)
+        except serial.SerialException:
+            self.connected = False
+            return
 
     def init(self, port, baud):  # initialiesiert Serielles Objekt
         """Initialisiert Threads und die serielle Verbindung."""
@@ -72,6 +77,9 @@ class SerialFunc:
         self.killflag.clear()
 
         self.connected = False
+
+        self.recv_thread_n = 0
+        self.send_thread_n = 0
 
         return
 
@@ -120,12 +128,16 @@ class SerialFunc:
 
     def change_baud(self, baud):
         """Erstellt eine neue serielle Verbindung, mit der angegebenen Baudrate"""
-        self.kill()
-        self.init(self.port, baud)
+        if self.connected:
+            self.kill()
+
+        self.ser = self.init(self.port, baud)
         self.baud = baud
 
     def change_port(self, port):
         """Erstellt eine neue serielle Verbindung, mit der angegebenen Baudrate"""
-        self.kill()
-        self.init(port, self.baud)
+        if self.connected:
+            self.kill()
+
+        self.ser = self.init(port, self.baud)
         self.port = port

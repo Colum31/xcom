@@ -52,14 +52,13 @@ class PrintFunc:
         self.printflag.set()
         self.print_thread.join()
 
-
     def save_screen(self):
-        "Sichert den aktuellen Zustand des Terminalfensters."
+        """Sichert den aktuellen Zustand des Terminalfensters."""
 
         os.system("tput smcup")
 
     def restore_screen(self):
-        "Stellt den gesicherten Zustand des Terminals wieder her."
+        """Stellt den gesicherten Zustand des Terminals wieder her."""
 
         os.system("tput cnorm && tput rmcup")
 
@@ -72,8 +71,14 @@ class PrintFunc:
     def print_serial_info(self):  # druckt informationen ueber die verbindung
         """Gibt Informationen ueber die serielle Verbindung aus."""
 
-        self.print_queue.put(("Nutze Port: {}\n\u001b[2KBaudrate betraegt {}".format(self.ser.port, self.ser.baud), "s", "SER_INFO"))
-        self.printflag.set()
+        if self.ser.connected:
+            self.print_queue.put(("Nutze Port: {}\n\u001b[2KBaudrate betraegt {}".format(self.ser.port, self.ser.baud),
+                                  "s", "SER_INFO"))
+            self.printflag.set()
+
+        else:
+            self.print_queue.put(("Nutze Port: ----------\n\u001b[2KBaudrate betraegt ----------", "s", "SER_INFO"))
+            self.printflag.set()
         return
 
     def print_clear(self):
@@ -112,7 +117,6 @@ class PrintFunc:
         self.printflag.set()
 
         return 0
-
 
     def scroll(self):  # "scrollt" terminal text
         """Scrollt das Programmfenster."""
