@@ -1,7 +1,7 @@
 import threading
 import os
 import subprocess
-from nonblock import KBHit
+from xcom.nonblock import KBHit
 
 
 class PrintFunc:

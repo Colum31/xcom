@@ -1,10 +1,10 @@
 # xcom
-A simple serial terminal, useable from the commandline.
+A simple serial terminal, usable from the commandline.
 
 ## Features
 
-* scripting:          send prewritten commands with optional delay
-* simple commands:    no finger breaking combinations any more
+* scripting:          send pre-written commands with optional delay
+* simple commands:    no finger breaking combinations anymore
 
 ## Requirements
 
@@ -15,15 +15,18 @@ xcom uses:
 
 ## Installation
 
-You will be able to install xcom using python packages.
-They will be available, once a stable version releases.
-
-Right now, just download the repo and execute xcom.py:
+You can install xcom using pip:
 
 ```
-cd base
-chmod +x xcom.py
-./xcom.py
+git clone https://github.com/Colum31/xcom.git
+cd xcom
+pip install .
+```
+
+To uninstall:
+
+```
+pip uninstall xcom
 ```
 
 ### Notice
