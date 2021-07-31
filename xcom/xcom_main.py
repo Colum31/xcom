@@ -259,10 +259,12 @@ def main():
     serial_kill_flag = threading.Event()  # erstelle die Flags
     print_kill_flag = threading.Event()
 
+    main_event_flag = threading.Event()
     send_data_flag = threading.Event()
 
-    ser = SerialFunc(d_port, d_baud, serial_kill_flag, send_data_flag, serial_recv_queue, serial_send_queue)
-    mon = PrintFunc(print_kill_flag, print_data_rdy_flag, term_input_queue, print_queue, ser)
+    ser = SerialFunc(d_port, d_baud, serial_kill_flag, send_data_flag, serial_recv_queue, serial_send_queue,
+                     main_event_flag)
+    mon = PrintFunc(print_kill_flag, print_data_rdy_flag, term_input_queue, print_queue, ser, main_event_flag)
 
     if not ser.connected:
         print_queue.put(("Konnte keine Verbindung zum Standartport \"{}\"  oeffnen!".format(d_port), "u"))
@@ -276,9 +278,12 @@ def main():
     print_thread_number = mon.print_thread_n
 
     main_thread_number = threading.get_native_id()
+    main_event_flag.clear()
 
     while True:
 
+        main_event_flag.wait()
+        main_event_flag.clear()
         try:
             if serial_recv_queue.qsize() > 0:  # ueberprueft ob etwas empfangen wurde und stellt das dar
 

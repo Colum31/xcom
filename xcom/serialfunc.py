@@ -1,5 +1,4 @@
 import queue
-import time
 import serial
 import threading
 
@@ -7,7 +6,7 @@ import threading
 class SerialFunc:
     """Implementiert serielle Funktionalitaet."""
 
-    def __init__(self, port, baud, killflag, dataflag, recv_queue, send_queue):
+    def __init__(self, port, baud, killflag, dataflag, recv_queue, send_queue, wake_main):
         """Standart Konstruktor."""
 
         # alles wird auf standart werte gesetzt, wenn Wert noch nicht bekannt
@@ -29,6 +28,7 @@ class SerialFunc:
         self.recv_thread_n = 0
         self.send_thread_n = 0
 
+        self.wake_main = wake_main
         self.ser = None
 
         # erstelle hier die serielle Verbindung
@@ -70,6 +70,8 @@ class SerialFunc:
         self.dataflag.set()
         self.killflag.set()
 
+        self.ser.cancel_read()
+
         self.recv_thread.join()
         self.send_thread.join()
         self.ser.close()
@@ -102,28 +104,33 @@ class SerialFunc:
         erhalten = ""
         falsche_baudrate = False
 
-        while not stop_flag.is_set():
-            if ser.inWaiting() > 0:
-                data = ser.read()
-                if data:
-                    try:
-                        data = data.decode("utf-8")
-                    except ValueError:
-                        falsche_baudrate = True
-                        erhalten = erhalten + "?"
-                        continue
+        while True:
 
-                    if data == '\n':
-                        q_recv.put(erhalten + '\n')
-                        erhalten = ""
-                    else:
-                        erhalten = erhalten + data
+            data = ser.read()
+
+            if stop_flag.is_set():
+                break
+
+            if data:
+                try:
+                    data = data.decode("utf-8")
+                except ValueError:
+                    falsche_baudrate = True
+                    erhalten = erhalten + "?"
+                    continue
+
+                if data == '\n':
+                    q_recv.put(erhalten + '\n')
+                    self.wake_main.set()
+                    erhalten = ""
+                else:
+                    erhalten = erhalten + data
             if ser.inWaiting() == 0 and falsche_baudrate:
                 q_recv.put(erhalten + '(nicht dekodierbare Zeichen!)\n')
+                self.wake_main.set()
                 erhalten = ""
                 falsche_baudrate = False
 
-            time.sleep(0.001)
         return
 
     def change_baud(self, baud):
