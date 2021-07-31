@@ -187,12 +187,12 @@ def print_threadnumbers():
     print_queue.put(("Serial Send hat Nummer: {}".format(ser_send_thread_number), "i"))
     print_queue.put(("Keyboard Thread hat Nummer: {}".format(key_thread_number), "i"))
     print_queue.put(("Print Thread hat Nummer: {}".format(print_thread_number), "i"))
+    print_queue.put(("Debug mit: top -H -p {}".format(main_thread_number), "i"))
     print_data_rdy_flag.set()
 
 
 def get_serial_thread_numbers(ser):
     """Aktualisiert die Thread Nummern"""
-
     global ser_recv_thread_number
     global ser_send_thread_number
 
@@ -325,5 +325,8 @@ def main():
 
         time.sleep(0.001)
 
-    ser.kill()
     mon.restore_screen()
+
+
+if __name__ == "__main__":
+    main()
