@@ -11,6 +11,9 @@ class PrintFunc:
         """Standart Konstruktor. Initialisiert Objekt und startet Thread."""
 
         self.zeilen = self.get_zeilen()
+        self.reihen = self.get_reihen()
+        self.command_pos = 0
+
         self.killflag = killflag
         self.printflag = printflag
         self.print_queue = print_queue
@@ -69,6 +72,12 @@ class PrintFunc:
         p = (subprocess.check_output(["tput lines"], shell=True))
         return int(p)
 
+    def get_reihen(self):
+        """Gibt zurueck, wie viele Reihen es im Terminalfenster gibt."""
+
+        p = (subprocess.check_output(["tput cols"], shell=True))
+        return int(p)
+
     def print_serial_info(self):  # druckt informationen ueber die verbindung
         """Gibt Informationen ueber die serielle Verbindung aus."""
 
@@ -124,6 +133,13 @@ class PrintFunc:
         """Scrollt das Programmfenster."""
         self.print_clear()
         self.print_serial_info()
+
+        self.command_pos = 0
+
+        if self.cur != "":
+            self.print_queue.put((self.cur, "kp"))
+            self.printflag.set()
+
         return
 
     def term_print(self, stopflag, data_rdy, print_queue):
@@ -131,7 +147,6 @@ class PrintFunc:
 
         zeilenanzahl = self.zeilen
         command_zeile = zeilenanzahl - 4
-        command_pos = 0
         meldung = False
         max_zeile = command_zeile - 3
 
@@ -141,7 +156,6 @@ class PrintFunc:
 
         display_zeile = 4
 
-        ser_info_string = ""
         while not stopflag.is_set():
             # hier NICHTS hin machen
             if data_rdy.wait():
@@ -154,10 +168,8 @@ class PrintFunc:
                     meldung = False
 
                 if display_zeile >= max_zeile or print_data[1] == "RESET":
-                    os.system("tput clear")
                     display_zeile = 4
-                    os.system("tput civis && tput cup 0 0")
-                    print(ser_info_string)
+                    self.scroll()
 
                     continue
 
@@ -192,12 +204,21 @@ class PrintFunc:
                     os.system("tput civis && tput cup {} 0".format(command_zeile + 1))
                     print(print_data[0], end="", flush=True)
                     meldung = True
+
                     continue
 
                 elif print_data[1] == "k":  # keyboard drucken
 
-                    os.system("tput cnorm && tput cup {} {}".format(command_zeile, command_pos))
-                    command_pos = command_pos + 1
+                    os.system("tput cnorm && tput cup {} {}".format(command_zeile, self.command_pos))
+                    self.command_pos = self.command_pos + 1
+                    print(print_data[0], end="", flush=True)
+
+                    continue
+
+                elif print_data[1] == "kp": # key-paste - fuege mehrere zeichen gleichzeitig ein
+
+                    os.system("tput cnorm && tput cup {} {}".format(command_zeile, self.command_pos))
+                    self.command_pos = self.command_pos + len(print_data[0])
                     print(print_data[0], end="", flush=True)
 
                     continue
@@ -205,18 +226,19 @@ class PrintFunc:
                 elif print_data[1] == "kc":  # keyboard kontrollsequenzen
 
                     if print_data[0] == "ENTER":
-                        os.system("tput cup {} {}".format(command_zeile, command_pos))
+                        os.system("tput cup {} {}".format(command_zeile, self.command_pos))
                         print("\u001b[2K", end='\r')
-                        command_pos = 0
+                        self.command_pos = 0
+
                         continue
 
                     if print_data[0] == "DEL":
 
-                        os.system("tput cup {} {}".format(command_zeile, command_pos))
-                        if command_pos == 0:
+                        os.system("tput cup {} {}".format(command_zeile, self.command_pos))
+                        if self.command_pos == 0:
                             continue
                         print('\b \b', end="", flush=True)
-                        command_pos = command_pos - 1
+                        self.command_pos = self.command_pos - 1
                         continue
 
                 elif print_data[1] == "s":  # serielle Info drucken
@@ -227,7 +249,7 @@ class PrintFunc:
                         print(ser_info_string, end="", flush=True)
                         continue
                 if print_queue.qsize() == 0:
-                    os.system("tput cup {} {}".format(command_zeile, command_pos))
+                    os.system("tput cup {} {}".format(command_zeile, self.command_pos))
                     data_rdy.clear()
 
         return 0

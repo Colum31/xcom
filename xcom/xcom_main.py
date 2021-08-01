@@ -1,7 +1,7 @@
 #!/usr/bin/env python3.9
 
 """
-xcom v.3.7 - July 2021
+xcom v.3.7.1 - August 2021
 Author: Colum31
 
 A small terminal-type application to communicate via serial.
@@ -9,7 +9,6 @@ A small terminal-type application to communicate via serial.
 
 # TODO: FIX
 #       -fix cursor flashing
-#       -fix clearing process, when there is input
 #       -fix !x behaviour after !h
 
 # TODO: IMPLEMENT
