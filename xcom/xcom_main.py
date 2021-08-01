@@ -9,16 +9,14 @@ A small terminal-type application to communicate via serial.
 
 # TODO: FIX
 #       -fix cursor flashing
-#       -optimize code (especially serial read)
 #       -fix clearing process, when there is input
 #       -fix !x behaviour after !h
-#       -refactor code
 
 # TODO: IMPLEMENT
 #       -support for more special keys CTRL, DELETE, ESC ...
 #       -mute feature
 #       -log feature
-#       -commmand history feature
+#       -command history feature
 #       -config files
 #       -scripting with arduino firmware support
 
@@ -33,6 +31,7 @@ from xcom.serialfunc import SerialFunc
 
 d_port = '/dev/ttyS0'  # standart port
 d_baud = 115200  # standart baud-rate
+MAX_BAUD = 4000000
 
 
 class ParseCodes:
@@ -87,7 +86,7 @@ def parse_input(erhalten, ser, mon, send_data_flag, serial_send_queue):  # verar
 
             neue_baud = int(neue_baud)
 
-            if neue_baud > 4000000:
+            if neue_baud > MAX_BAUD:
                 print_queue.put(("Baudrate \"{}\" ist zu hoch!".format(neue_baud), 'u'))
                 print_data_rdy_flag.set()
                 return ParseCodes.CLEAR
@@ -259,13 +258,15 @@ def main():
     serial_kill_flag = threading.Event()  # erstelle die Flags
     print_kill_flag = threading.Event()
 
+    main_event_flag = threading.Event()
     send_data_flag = threading.Event()
 
-    ser = SerialFunc(d_port, d_baud, serial_kill_flag, send_data_flag, serial_recv_queue, serial_send_queue)
-    mon = PrintFunc(print_kill_flag, print_data_rdy_flag, term_input_queue, print_queue, ser)
+    ser = SerialFunc(d_port, d_baud, serial_kill_flag, send_data_flag, serial_recv_queue, serial_send_queue,
+                     main_event_flag)
+    mon = PrintFunc(print_kill_flag, print_data_rdy_flag, term_input_queue, print_queue, ser, main_event_flag)
 
     if not ser.connected:
-        print_queue.put(("Konnte keine Verbindung zum Standartport \"{}\"  oeffnen!".format(d_port), "u"))
+        print_queue.put(("Konnte keine Verbindung zum Standartport \"{}\" oeffnen!".format(d_port), "u"))
         print_data_rdy_flag.set()
 
     # speicher alle Nummern der Threads ab
@@ -276,9 +277,12 @@ def main():
     print_thread_number = mon.print_thread_n
 
     main_thread_number = threading.get_native_id()
+    main_event_flag.clear()
 
     while True:
 
+        main_event_flag.wait()
+        main_event_flag.clear()
         try:
             if serial_recv_queue.qsize() > 0:  # ueberprueft ob etwas empfangen wurde und stellt das dar
 

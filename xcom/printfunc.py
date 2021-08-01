@@ -7,7 +7,7 @@ from xcom.nonblock import KBHit
 class PrintFunc:
     """Implementiert die Ein- und Ausgabe auf dem Terminalfenster."""
 
-    def __init__(self, killflag, printflag, keyboard_queue, print_queue, ser):
+    def __init__(self, killflag, printflag, keyboard_queue, print_queue, ser, wake_main):
         """Standart Konstruktor. Initialisiert Objekt und startet Thread."""
 
         self.zeilen = self.get_zeilen()
@@ -17,6 +17,7 @@ class PrintFunc:
         self.keystroke_queue = keyboard_queue
         self.ser = ser
         self.cur = ""
+        self.wake_main = wake_main
 
         self.keyboard_thread = None
         self.print_thread = None
@@ -95,6 +96,7 @@ class PrintFunc:
             if kb.kbhit():
                 c = kb.getch()
                 keyboard_queue.put(c)
+                self.wake_main.set()
 
     def handle_keyboard(self, c):  # verarbeitet rohe daten von der tastatur
         """Verarbeitet Rohdaten der Tastatur."""
