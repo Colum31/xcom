@@ -1,7 +1,7 @@
 #!/usr/bin/env python3.9
 
 """
-xcom v.3.7.1 - August 2021
+xcom v.3.8 - August 2021
 Author: Colum31
 
 A small terminal-type application to communicate via serial.
@@ -24,6 +24,7 @@ import threading
 import queue
 import time
 import os
+import json
 
 from xcom.printfunc import PrintFunc
 from xcom.serialfunc import SerialFunc
@@ -40,6 +41,45 @@ class ParseCodes:
     QUIT = 1
     CLEAR = 2
     SCRIPT = 3
+
+
+def parse_config():
+    """Lade lokale oder globale Konfigurationsdatei"""
+
+    configfile = None
+    # suche als erstes im lokalen Ordner
+
+    try:
+        configfile = open("config.json", "r")
+        datei = True
+    except IOError:
+        datei = False
+
+    # wenn nichts gefunden wurde, suche im home-directory weiter
+
+    if not datei:
+        try:
+            configfile = open("{}/.xcom/config.json".format(os.path.expanduser('~')), "r")
+        except IOError:
+            return None
+
+    try:
+        data = json.load(configfile)
+    except json.decoder.JSONDecodeError:
+        return None
+
+    configfile.close()
+
+    return data.get("profile-name"), data.get("port"), data.get("baudrate")
+
+
+def print_config_name(name):
+    """Gibt den aktuellen Profilnamen aus."""
+    if name is None:
+        return
+
+    print_queue.put(("Nutze Profil: {}".format(name), "u"))
+    print_data_rdy_flag.set()
 
 
 def parse_input(erhalten, ser, mon, send_data_flag, serial_send_queue):  # verarbeitet das eingelesene
@@ -260,12 +300,26 @@ def main():
     main_event_flag = threading.Event()
     send_data_flag = threading.Event()
 
-    ser = SerialFunc(d_port, d_baud, serial_kill_flag, send_data_flag, serial_recv_queue, serial_send_queue,
+    port = d_port
+    baud = d_baud
+
+    conn_details = parse_config()
+
+    # pruefe, ob Datei geladen werden konnte
+    if conn_details is not None:
+
+        if conn_details[1] is not None:
+            port = conn_details[1]
+
+        if conn_details[2] is not None:
+            baud = conn_details[2]
+
+    ser = SerialFunc(port, baud, serial_kill_flag, send_data_flag, serial_recv_queue, serial_send_queue,
                      main_event_flag)
     mon = PrintFunc(print_kill_flag, print_data_rdy_flag, term_input_queue, print_queue, ser, main_event_flag)
 
     if not ser.connected:
-        print_queue.put(("Konnte keine Verbindung zum Standartport \"{}\" oeffnen!".format(d_port), "u"))
+        print_queue.put(("Konnte keine Verbindung zum Port \"{}\" oeffnen!".format(port), "u"))
         print_data_rdy_flag.set()
 
     # speicher alle Nummern der Threads ab
@@ -277,6 +331,8 @@ def main():
 
     main_thread_number = threading.get_native_id()
     main_event_flag.clear()
+
+    print_config_name(conn_details[0])
 
     while True:
 
