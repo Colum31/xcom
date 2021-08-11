@@ -1,7 +1,7 @@
 #!/usr/bin/env python3.9
 
 """
-xcom v.3.8 - August 2021
+xcom v.3.8.1 - August 2021
 Author: Colum31
 
 A small terminal-type application to communicate via serial.
@@ -16,7 +16,6 @@ A small terminal-type application to communicate via serial.
 #       -mute feature
 #       -log feature
 #       -command history feature
-#       -config files
 #       -scripting with arduino firmware support
 
 import serial
@@ -32,6 +31,7 @@ from xcom.serialfunc import SerialFunc
 d_port = '/dev/ttyS0'  # standart port
 d_baud = 115200  # standart baud-rate
 MAX_BAUD = 4000000
+profile_list = list()
 
 
 class ParseCodes:
@@ -43,8 +43,17 @@ class ParseCodes:
     SCRIPT = 3
 
 
+class Profile:
+    """Speichert die Daten fuer Profile."""
+    name = ""
+    baud = 0
+    port = 0
+
+
 def parse_config():
     """Lade lokale oder globale Konfigurationsdatei"""
+
+    global profile_list
 
     configfile = None
     # suche als erstes im lokalen Ordner
@@ -61,7 +70,7 @@ def parse_config():
         try:
             configfile = open("{}/.xcom/config.json".format(os.path.expanduser('~')), "r")
         except IOError:
-            return None
+            return None, None, None
 
     try:
         data = json.load(configfile)
@@ -70,7 +79,22 @@ def parse_config():
 
     configfile.close()
 
-    return data.get("profile-name"), data.get("port"), data.get("baudrate")
+    # fuege alle Profile der Liste hinzu, wenn keine da, gebe nichts zurueck
+
+    try:
+        for i in data["profiles"]:
+
+            entry = Profile()
+            entry.name = i.get("profile-name")
+            entry.port = i.get("port")
+            entry.baud = i.get("baudrate")
+
+            profile_list.append(entry)
+
+    except KeyError:
+        return None, None, None
+
+    return profile_list[0].name, profile_list[0].port, profile_list[0].baud
 
 
 def print_config_name(name):
@@ -165,6 +189,25 @@ def parse_input(erhalten, ser, mon, send_data_flag, serial_send_queue):  # verar
             mon.print_serial_info()
             get_serial_thread_numbers(ser)
             print_queue.put(("Aendere Port zu \"{}\"".format(port), 'i'))
+            print_data_rdy_flag.set()
+            return ParseCodes.CLEAR
+
+        elif befehl == "!pr":  # aendere Profil
+
+            profilename = erhalten.split()[1]
+
+            # pruefe ob Profil in Liste vorhanden
+            for i in profile_list:
+                if i.name == profilename:
+                    ser.kill()
+                    ser.init(i.port, i.baud)
+
+                    print_config_name(profilename)
+
+                    return ParseCodes.CLEAR
+
+            # wenn nicht, gib Fehlermeldung aus
+            print_queue.put(("Konnte kein Profil \"{}\" finden!".format(profilename), "u"))
             print_data_rdy_flag.set()
             return ParseCodes.CLEAR
 

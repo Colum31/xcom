@@ -2,7 +2,7 @@ from setuptools import setup
 
 setup(
     name='xcom',
-    version='3.8',
+    version='3.8.1',
     packages=['xcom'],
     author='Colum31',
     url='https://github.com/Colum31/xcom',
