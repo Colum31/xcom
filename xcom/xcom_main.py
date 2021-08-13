@@ -30,6 +30,10 @@ from xcom.serialfunc import SerialFunc
 
 d_port = '/dev/ttyS0'  # standart port
 d_baud = 115200  # standart baud-rate
+
+d_this_name = "Raspi"
+d_other_name = "Arduino"
+
 MAX_BAUD = 4000000
 profile_list = list()
 
@@ -46,6 +50,8 @@ class ParseCodes:
 class Profile:
     """Speichert die Daten fuer Profile."""
     name = ""
+    this_device = ""
+    other_device = ""
     baud = 0
     port = 0
 
@@ -70,12 +76,12 @@ def parse_config():
         try:
             configfile = open("{}/.xcom/config.json".format(os.path.expanduser('~')), "r")
         except IOError:
-            return None, None, None
+            return 0
 
     try:
         data = json.load(configfile)
     except json.decoder.JSONDecodeError:
-        return None
+        return 0
 
     configfile.close()
 
@@ -83,18 +89,19 @@ def parse_config():
 
     try:
         for i in data["profiles"]:
-
             entry = Profile()
             entry.name = i.get("profile-name")
             entry.port = i.get("port")
             entry.baud = i.get("baudrate")
+            entry.this_device = i.get("this-name")
+            entry.other_device = i.get("other-name")
 
             profile_list.append(entry)
 
     except KeyError:
-        return None, None, None
+        return 0
 
-    return profile_list[0].name, profile_list[0].port, profile_list[0].baud
+    return len(profile_list)
 
 
 def print_config_name(name):
@@ -102,7 +109,7 @@ def print_config_name(name):
     if name is None:
         return
 
-    print_queue.put(("Nutze Profil: {}".format(name), "u"))
+    print_queue.put(("Nutze Profil: {}".format(name.name), "u"))
     print_data_rdy_flag.set()
 
 
@@ -194,7 +201,12 @@ def parse_input(erhalten, ser, mon, send_data_flag, serial_send_queue):  # verar
 
         elif befehl == "!pr":  # aendere Profil
 
-            profilename = erhalten.split()[1]
+            try:
+                profilename = erhalten.split()[1]
+            except IndexError:
+                print_queue.put(("Profilnamen angeben!", "u"))
+                print_data_rdy_flag.set()
+                return ParseCodes.CLEAR
 
             # pruefe ob Profil in Liste vorhanden
             for i in profile_list:
@@ -202,8 +214,13 @@ def parse_input(erhalten, ser, mon, send_data_flag, serial_send_queue):  # verar
                     ser.kill()
                     ser.init(i.port, i.baud)
 
-                    print_config_name(profilename)
+                    if not ser.connected:
+                        mon.print_serial_info()
+                        print_queue.put(("Verbindung mit Daten aus Profil {} nicht moeglich!".format(profilename), "u"))
+                        return ParseCodes.CLEAR
 
+                    print_config_name(profilename)
+                    mon.print_serial_info()
                     return ParseCodes.CLEAR
 
             # wenn nicht, gib Fehlermeldung aus
@@ -345,21 +362,22 @@ def main():
 
     port = d_port
     baud = d_baud
+    this_name = d_this_name
+    other_name = d_other_name
 
-    conn_details = parse_config()
+    number_profiles = parse_config()
 
-    # pruefe, ob Datei geladen werden konnte
-    if conn_details is not None:
-
-        if conn_details[1] is not None:
-            port = conn_details[1]
-
-        if conn_details[2] is not None:
-            baud = conn_details[2]
+    if number_profiles != 0:
+        profile = profile_list[0]
+        port = profile.port
+        baud = profile.baud
+        this_name = profile.this_device
+        other_name = profile.other_device
 
     ser = SerialFunc(port, baud, serial_kill_flag, send_data_flag, serial_recv_queue, serial_send_queue,
                      main_event_flag)
-    mon = PrintFunc(print_kill_flag, print_data_rdy_flag, term_input_queue, print_queue, ser, main_event_flag)
+    mon = PrintFunc(print_kill_flag, print_data_rdy_flag, term_input_queue, print_queue, ser, main_event_flag, this_name
+                    , other_name)
 
     if not ser.connected:
         print_queue.put(("Konnte keine Verbindung zum Port \"{}\" oeffnen!".format(port), "u"))
@@ -375,7 +393,7 @@ def main():
     main_thread_number = threading.get_native_id()
     main_event_flag.clear()
 
-    print_config_name(conn_details[0])
+    print_config_name(profile_list[0])
 
     while True:
 

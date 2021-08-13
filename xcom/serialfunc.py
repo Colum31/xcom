@@ -32,33 +32,35 @@ class SerialFunc:
         self.ser = None
 
         # erstelle hier die serielle Verbindung
-        try:
-            self.init(self.port, self.baud)
-        except serial.SerialException:
-            self.connected = False
-            return
+
+        self.init(self.port, self.baud)
 
     def init(self, port, baud):  # initialiesiert Serielles Objekt
         """Initialisiert Threads und die serielle Verbindung."""
 
-        self.init_ser(port, baud)
-        self.init_threads()
+        try:
+            self._init_ser(port, baud)
+        except serial.SerialException:
+            self.connected = False
+            return
 
-    def init_ser(self, port, baud):
+        self._init_threads()
+
+    def _init_ser(self, port, baud):
         """Initialisiert serielle Verbindung und speichert sie."""
 
-        self.ser = serial.Serial(port, baud)
         self.baud = baud
         self.port = port
+        self.ser = serial.Serial(port, baud)
 
-    def init_threads(self):
+    def _init_threads(self):
         """Initialisiert Threads."""
-        recv_thread = threading.Thread(target=self.listen,
+        recv_thread = threading.Thread(target=self._listen,
                                        args=(self.killflag, self.ser, self.recv_queue,), daemon=True)
         recv_thread.start()
         self.recv_thread = recv_thread
 
-        send_thread = threading.Thread(target=self.print,
+        send_thread = threading.Thread(target=self._print,
                                        args=(self.killflag, self.dataflag, self.ser, self.send_queue,),
                                        daemon=True)
         send_thread.start()
@@ -72,17 +74,17 @@ class SerialFunc:
     def kill(self):  # schliesst die serielle Verbindung
         """Beendet die serielle Verbindung und die dazugehoerigen Threads."""
 
-        self.kill_threads()
-        self.kill_ser()
+        self._kill_threads()
+        self._kill_ser()
 
-    def kill_ser(self):
+    def _kill_ser(self):
         """Beendet die serielle Verbindung."""
 
         if self.connected:
             self.ser.close()
             self.connected = False
 
-    def kill_threads(self):
+    def _kill_threads(self):
         """Beendet die Threads."""
         if not self.connected:
             return
@@ -101,7 +103,7 @@ class SerialFunc:
         self.recv_thread_n = 0
         self.send_thread_n = 0
 
-    def print(self, stop_flag, data_flag, ser, q_send):  # sendet das eingegebene
+    def _print(self, stop_flag, data_flag, ser, q_send):  # sendet das eingegebene
         """Sendet seriell Daten."""
         while not stop_flag.is_set():
             data_flag.wait()
@@ -114,7 +116,7 @@ class SerialFunc:
 
         return
 
-    def listen(self, stop_flag, ser, q_recv):  # liesst das serielle objekt (trennzeichen \n)
+    def _listen(self, stop_flag, ser, q_recv):  # liesst das serielle objekt (trennzeichen \n)
         """Liest Daten aus der seriellen Verbindung aus."""
 
         erhalten = ""
@@ -152,19 +154,19 @@ class SerialFunc:
     def change_baud(self, baud):
         """Erstellt eine neue serielle Verbindung, mit der angegebenen Baudrate"""
         if self.connected:
-            self.kill_threads()
+            self._kill_threads()
             self.ser.baudrate = baud
             self.baud = baud
-            self.init_threads()
+            self._init_threads()
         else:
-            self.init_ser(self.port, baud)
+            self._init_ser(self.port, baud)
 
     def change_port(self, port):
         """Erstellt eine neue serielle Verbindung, mit der angegebenen Baudrate"""
         if self.connected:
-            self.kill_threads()
+            self._kill_threads()
             self.ser.port = port
             self.port = port
-            self.init_threads()
+            self._init_threads()
         else:
-            self.init_ser(port, self.baud)
+            self._init_ser(port, self.baud)

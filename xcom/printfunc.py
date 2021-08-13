@@ -7,12 +7,15 @@ from xcom.nonblock import KBHit
 class PrintFunc:
     """Implementiert die Ein- und Ausgabe auf dem Terminalfenster."""
 
-    def __init__(self, killflag, printflag, keyboard_queue, print_queue, ser, wake_main):
+    def __init__(self, killflag, printflag, keyboard_queue, print_queue, ser, wake_main, this_name, other_name):
         """Standart Konstruktor. Initialisiert Objekt und startet Thread."""
 
-        self.zeilen = self.get_zeilen()
-        self.reihen = self.get_reihen()
+        self.zeilen = self._get_zeilen()
+        self.reihen = self._get_reihen()
         self.command_pos = 0
+
+        self.this_name = this_name
+        self.other_name = other_name
 
         self.killflag = killflag
         self.printflag = printflag
@@ -29,18 +32,18 @@ class PrintFunc:
         self.print_thread_n = 0
 
         self.save_screen()
-        self.start_threads()
+        self._start_threads()
         self.print_clear()
         self.print_serial_info()
 
-    def start_threads(self):
+    def _start_threads(self):
         """Startet Threads, um die Tastatur zu lesen und auf dem Bildschirm zu schreiben."""
 
-        keythread = threading.Thread(target=self.read_keyboard, args=(self.keystroke_queue,), daemon=True)
+        keythread = threading.Thread(target=self._read_keyboard, args=(self.keystroke_queue,), daemon=True)
         keythread.start()
         self.keyboard_thread = keythread
 
-        printthread = threading.Thread(target=self.term_print, args=(self.killflag, self.printflag, self.print_queue,),
+        printthread = threading.Thread(target=self._term_print, args=(self.killflag, self.printflag, self.print_queue,),
                                        daemon=True)
         printthread.start()
         self.print_thread = printthread
@@ -66,13 +69,13 @@ class PrintFunc:
 
         os.system("tput cnorm && tput rmcup")
 
-    def get_zeilen(self):  # ueberprueft das terminal um zeilenzahl zu erhalten
+    def _get_zeilen(self):  # ueberprueft das terminal um zeilenzahl zu erhalten
         """Gibt zurueck, wie viele Zeilen es im Terminalfenster gibt."""
 
         p = (subprocess.check_output(["tput lines"], shell=True))
         return int(p)
 
-    def get_reihen(self):
+    def _get_reihen(self):
         """Gibt zurueck, wie viele Reihen es im Terminalfenster gibt."""
 
         p = (subprocess.check_output(["tput cols"], shell=True))
@@ -97,7 +100,7 @@ class PrintFunc:
         os.system("tput clear")
         return
 
-    def read_keyboard(self, keyboard_queue):
+    def _read_keyboard(self, keyboard_queue):
         """Liest die Eingabe der Tastatur aus."""
         kb = KBHit()
 
@@ -142,7 +145,7 @@ class PrintFunc:
 
         return
 
-    def term_print(self, stopflag, data_rdy, print_queue):
+    def _term_print(self, stopflag, data_rdy, print_queue):
         """Gibt Text auf dem Terminalfenster aus."""
 
         zeilenanzahl = self.zeilen
@@ -151,8 +154,8 @@ class PrintFunc:
         max_zeile = command_zeile - 3
 
         info = "[Info]: "
-        raspberry = "\033[0;31m[Raspi]:\033[0m "
-        arduino = "\033[1;34m[Arduino]:\033[0m "
+        this = "\033[0;31m[{}]:\033[0m ".format(self.this_name)
+        other = "\033[1;34m[{}]:\033[0m ".format(self.other_name)
 
         display_zeile = 4
 
@@ -178,7 +181,7 @@ class PrintFunc:
                     os.system("tput civis && tput cup {} 0".format(display_zeile))
                     display_zeile = display_zeile + 1
 
-                    print(raspberry + print_data[0], end="", flush=True)
+                    print(this + print_data[0], end="", flush=True)
                     continue
 
                 elif print_data[1] == "a":  # daten vom arduino drucken
@@ -186,7 +189,7 @@ class PrintFunc:
                     os.system("tput civis && tput cup {} 0".format(display_zeile))
                     display_zeile = display_zeile + 1
 
-                    print(arduino + print_data[0], end="", flush=True)
+                    print(other + print_data[0], end="", flush=True)
 
                     continue
 
@@ -215,7 +218,7 @@ class PrintFunc:
 
                     continue
 
-                elif print_data[1] == "kp": # key-paste - fuege mehrere zeichen gleichzeitig ein
+                elif print_data[1] == "kp":  # key-paste - fuege mehrere zeichen gleichzeitig ein
 
                     os.system("tput cnorm && tput cup {} {}".format(command_zeile, self.command_pos))
                     self.command_pos = self.command_pos + len(print_data[0])
@@ -252,4 +255,4 @@ class PrintFunc:
                     os.system("tput cup {} {}".format(command_zeile, self.command_pos))
                     data_rdy.clear()
 
-        return 0
+            return 0
