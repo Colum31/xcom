@@ -1,7 +1,7 @@
 #!/usr/bin/env python3.9
 
 """
-xcom v.3.8.1 - August 2021
+xcom v.3.9 - August 2021
 Author: Colum31
 
 A small terminal-type application to communicate via serial.
@@ -50,14 +50,54 @@ class ParseCodes:
 class Profile:
     """Speichert die Daten fuer Profile."""
     name = ""
+
     this_device = ""
     other_device = ""
+
+    this_color = None
+    this_boldness = 0
+    other_color = None
+    other_boldness = 0
+
     baud = 0
     port = 0
 
 
+Colors = {
+    
+    "BLACK":    ";30m",
+    "RED":      ";31m",
+    "GREEN":    ";32m",
+    "YELLOW":   ";33m",
+    "BLUE":     ";34m",
+    "PURPLE":   ";35m",
+    "CYAN":     ";36m",
+    "WHITE":    ";37m"
+
+}
+
+
+def make_default_profile():
+    """Erstellt ein Profil mit Standarteinstellungen."""
+
+    entry_default = Profile()
+    entry_default.name = "default"
+    entry_default.port = d_port
+    entry_default.baud = d_baud
+
+    entry_default.this_device = d_this_name
+    entry_default.this_color = Colors.get("RED")
+    entry_default.this_boldness = 1
+
+    entry_default.other_device = d_other_name
+    entry_default.other_color = Colors.get("BLUE")
+    entry_default.other_boldness = 1
+
+    profile_list.append(entry_default)
+
+
 def parse_config():
-    """Lade lokale oder globale Konfigurationsdatei"""
+    """Lade lokale oder globale Konfigurationsdatei."""
 
     global profile_list
 
@@ -95,6 +135,12 @@ def parse_config():
             entry.baud = i.get("baudrate")
             entry.this_device = i.get("this-name")
             entry.other_device = i.get("other-name")
+
+            entry.this_color = Colors.get(i.get("this-color"))
+            entry.other_color = Colors.get(i.get("other-color"))
+
+            entry.other_boldness = i.get("other-boldness")
+            entry.this_boldness = i.get("this-boldness")
 
             profile_list.append(entry)
 
@@ -219,7 +265,8 @@ def parse_input(erhalten, ser, mon, send_data_flag, serial_send_queue):  # verar
                         print_queue.put(("Verbindung mit Daten aus Profil {} nicht moeglich!".format(profilename), "u"))
                         return ParseCodes.CLEAR
 
-                    print_config_name(profilename)
+                    print_config_name(i)
+                    mon.set_strings(i)
                     mon.print_serial_info()
                     return ParseCodes.CLEAR
 
@@ -360,24 +407,16 @@ def main():
     main_event_flag = threading.Event()
     send_data_flag = threading.Event()
 
-    port = d_port
-    baud = d_baud
-    this_name = d_this_name
-    other_name = d_other_name
+    make_default_profile()
+    parse_config()
 
-    number_profiles = parse_config()
-
-    if number_profiles != 0:
-        profile = profile_list[0]
-        port = profile.port
-        baud = profile.baud
-        this_name = profile.this_device
-        other_name = profile.other_device
+    profile = profile_list[-1]
+    port = profile.port
+    baud = profile.baud
 
     ser = SerialFunc(port, baud, serial_kill_flag, send_data_flag, serial_recv_queue, serial_send_queue,
                      main_event_flag)
-    mon = PrintFunc(print_kill_flag, print_data_rdy_flag, term_input_queue, print_queue, ser, main_event_flag, this_name
-                    , other_name)
+    mon = PrintFunc(print_kill_flag, print_data_rdy_flag, term_input_queue, print_queue, ser, main_event_flag, profile)
 
     if not ser.connected:
         print_queue.put(("Konnte keine Verbindung zum Port \"{}\" oeffnen!".format(port), "u"))
@@ -393,7 +432,7 @@ def main():
     main_thread_number = threading.get_native_id()
     main_event_flag.clear()
 
-    print_config_name(profile_list[0])
+    print_config_name(profile)
 
     while True:
 

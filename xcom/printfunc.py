@@ -7,15 +7,20 @@ from xcom.nonblock import KBHit
 class PrintFunc:
     """Implementiert die Ein- und Ausgabe auf dem Terminalfenster."""
 
-    def __init__(self, killflag, printflag, keyboard_queue, print_queue, ser, wake_main, this_name, other_name):
+    def __init__(self, killflag, printflag, keyboard_queue, print_queue, ser, wake_main, profile):
         """Standart Konstruktor. Initialisiert Objekt und startet Thread."""
 
         self.zeilen = self._get_zeilen()
         self.reihen = self._get_reihen()
         self.command_pos = 0
 
-        self.this_name = this_name
-        self.other_name = other_name
+        self.infostring = ""
+        self.this_device_string = ""
+        self.other_device_string = ""
+
+        self.profile = profile
+
+        self.set_strings(self.profile)
 
         self.killflag = killflag
         self.printflag = printflag
@@ -50,6 +55,17 @@ class PrintFunc:
 
         self.keyboard_thread_n = keythread.native_id
         self.print_thread_n = printthread.native_id
+
+    def set_strings(self, profile):
+        """Wecheselt die Profileinstellungen."""
+
+        self.profile = profile
+
+        self.infostring = "[Info]: "
+        self.this_device_string = "\033[{}{}[{}]:\033[0m ".format(profile.this_boldness, profile.this_color,
+                                                                  profile.this_device)
+        self.other_device_string = "\033[{}{}[{}]:\033[0m ".format(profile.other_boldness, profile.other_color,
+                                                                   profile.other_device)
 
     def kill(self):
         """Beendet die Threads."""
@@ -153,10 +169,6 @@ class PrintFunc:
         meldung = False
         max_zeile = command_zeile - 3
 
-        info = "[Info]: "
-        this = "\033[0;31m[{}]:\033[0m ".format(self.this_name)
-        other = "\033[1;34m[{}]:\033[0m ".format(self.other_name)
-
         display_zeile = 4
 
         while not stopflag.is_set():
@@ -181,7 +193,7 @@ class PrintFunc:
                     os.system("tput civis && tput cup {} 0".format(display_zeile))
                     display_zeile = display_zeile + 1
 
-                    print(this + print_data[0], end="", flush=True)
+                    print(self.this_device_string + print_data[0], end="", flush=True)
                     continue
 
                 elif print_data[1] == "a":  # daten vom arduino drucken
@@ -189,7 +201,7 @@ class PrintFunc:
                     os.system("tput civis && tput cup {} 0".format(display_zeile))
                     display_zeile = display_zeile + 1
 
-                    print(other + print_data[0], end="", flush=True)
+                    print(self.other_device_string + print_data[0], end="", flush=True)
 
                     continue
 
@@ -198,7 +210,7 @@ class PrintFunc:
                     os.system("tput civis && tput cup {} 0".format(display_zeile))
                     display_zeile = display_zeile + 1
 
-                    print(info + print_data[0], end="", flush=True)
+                    print(self.infostring + print_data[0], end="", flush=True)
 
                     continue
 

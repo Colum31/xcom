@@ -4,6 +4,7 @@ A simple serial terminal, usable from the commandline.
 ## Features
 
 * scripting:          send pre-written commands with optional delay
+* profiles:           use profiles to switch fast between configurations  
 * simple commands:    no finger breaking combinations anymore
 
 ## Requirements
