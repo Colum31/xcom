@@ -37,6 +37,8 @@ d_other_name = "Arduino"
 MAX_BAUD = 4000000
 profile_list = list()
 
+config_name = "config.json"
+
 
 class ParseCodes:
     """Stellt enums fuer Rueckgabewerte bereit."""
@@ -64,17 +66,83 @@ class Profile:
 
 
 Colors = {
-    
-    "BLACK":    ";30m",
-    "RED":      ";31m",
-    "GREEN":    ";32m",
-    "YELLOW":   ";33m",
-    "BLUE":     ";34m",
-    "PURPLE":   ";35m",
-    "CYAN":     ";36m",
-    "WHITE":    ";37m"
+
+    "BLACK": ";30m",
+    "RED": ";31m",
+    "GREEN": ";32m",
+    "YELLOW": ";33m",
+    "BLUE": ";34m",
+    "PURPLE": ";35m",
+    "CYAN": ";36m",
+    "WHITE": ";37m"
 
 }
+
+
+def reverseDictSearch(s, dictionary):
+    """Rueckwaertssuche bei Woerterbuch."""
+
+    for searched, value in dictionary.items():
+        if value == s:
+            return searched
+
+    return "WHITE"
+
+
+def profile_to_dict(profile):
+    """Konvertiert ein Profil zu einem Dictionary, welches in json umgewandelt werden kann."""
+
+    this_color = reverseDictSearch(profile.this_color, Colors)
+    other_color = reverseDictSearch(profile.other_color, Colors)
+
+    jsonDict = {
+
+        "profile-name": profile.name,
+        "port": profile.port,
+        "baudrate": profile.baud,
+        "this-name": profile.this_device,
+        "other-name": profile.other_device,
+
+        "this-color": this_color,
+        "other-color": other_color,
+
+        "other-boldness": profile.other_boldness,
+        "this-boldness": profile.this_boldness
+
+    }
+
+    return jsonDict
+
+
+def profilelist_to_json(profilelist):
+    """Erstellt aus einer Profilliste einen json-String."""
+
+    parsed_profiles = list()
+
+    jsonObject = {
+        "profiles": parsed_profiles
+    }
+
+    for profile in profilelist:
+
+        parsed_profile = profile_to_dict(profile)
+        parsed_profiles.append(parsed_profile)
+
+    json_string = json.dumps(jsonObject, indent=4)
+    return json_string
+
+
+def write_profile_to_file(profile, file):
+    """Schreibt das gegebene Profil in eine neue Konfigurationsdatei."""
+
+    f = open(file, "w")
+    profilelist = list()
+    profilelist.append(profile)
+
+    jsonStr = profilelist_to_json(profilelist)
+
+    f.write(jsonStr)
+    f.close()
 
 
 def make_default_profile():
@@ -95,6 +163,8 @@ def make_default_profile():
 
     profile_list.append(entry_default)
 
+    return entry_default
+
 
 def parse_config():
     """Lade lokale oder globale Konfigurationsdatei."""
@@ -105,7 +175,7 @@ def parse_config():
     # suche als erstes im lokalen Ordner
 
     try:
-        configfile = open("config.json", "r")
+        configfile = open(config_name, "r")
         datei = True
     except IOError:
         datei = False
@@ -114,7 +184,7 @@ def parse_config():
 
     if not datei:
         try:
-            configfile = open("{}/.xcom/config.json".format(os.path.expanduser('~')), "r")
+            configfile = open("{}/.xcom/{}".format(os.path.expanduser('~'), config_name), "r")
         except IOError:
             return 0
 
@@ -243,6 +313,15 @@ def parse_input(erhalten, ser, mon, send_data_flag, serial_send_queue):  # verar
             get_serial_thread_numbers(ser)
             print_queue.put(("Aendere Port zu \"{}\"".format(port), 'i'))
             print_data_rdy_flag.set()
+            return ParseCodes.CLEAR
+
+        elif befehl == "!pd":  # schreibt das default-profil in eine neue lokale Konfigurationsdatei
+
+            write_profile_to_file(make_default_profile(), config_name)
+
+            print_queue.put(("Schreibe default-Profil nach: \"{}/{}\"".format(os.getcwd(), config_name), 'u'))
+            print_data_rdy_flag.set()
+
             return ParseCodes.CLEAR
 
         elif befehl == "!pr":  # aendere Profil
