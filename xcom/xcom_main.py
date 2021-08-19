@@ -1,7 +1,7 @@
 #!/usr/bin/env python3.9
 
 """
-xcom v.3.8 - August 2021
+xcom v.3.9 - August 2021
 Author: Colum31
 
 A small terminal-type application to communicate via serial.
@@ -16,7 +16,6 @@ A small terminal-type application to communicate via serial.
 #       -mute feature
 #       -log feature
 #       -command history feature
-#       -config files
 #       -scripting with arduino firmware support
 
 import serial
@@ -31,7 +30,14 @@ from xcom.serialfunc import SerialFunc
 
 d_port = '/dev/ttyS0'  # standart port
 d_baud = 115200  # standart baud-rate
+
+d_this_name = "Raspi"
+d_other_name = "Arduino"
+
 MAX_BAUD = 4000000
+profile_list = list()
+
+config_name = "config.json"
 
 
 class ParseCodes:
@@ -43,14 +49,133 @@ class ParseCodes:
     SCRIPT = 3
 
 
+class Profile:
+    """Speichert die Daten fuer Profile."""
+    name = ""
+
+    this_device = ""
+    other_device = ""
+
+    this_color = None
+    this_boldness = 0
+    other_color = None
+    other_boldness = 0
+
+    baud = 0
+    port = 0
+
+
+Colors = {
+
+    "BLACK": ";30m",
+    "RED": ";31m",
+    "GREEN": ";32m",
+    "YELLOW": ";33m",
+    "BLUE": ";34m",
+    "PURPLE": ";35m",
+    "CYAN": ";36m",
+    "WHITE": ";37m"
+
+}
+
+
+def reverseDictSearch(s, dictionary):
+    """Rueckwaertssuche bei Woerterbuch."""
+
+    for searched, value in dictionary.items():
+        if value == s:
+            return searched
+
+    return "WHITE"
+
+
+def profile_to_dict(profile):
+    """Konvertiert ein Profil zu einem Dictionary, welches in json umgewandelt werden kann."""
+
+    this_color = reverseDictSearch(profile.this_color, Colors)
+    other_color = reverseDictSearch(profile.other_color, Colors)
+
+    jsonDict = {
+
+        "profile-name": profile.name,
+        "port": profile.port,
+        "baudrate": profile.baud,
+        "this-name": profile.this_device,
+        "other-name": profile.other_device,
+
+        "this-color": this_color,
+        "other-color": other_color,
+
+        "other-boldness": profile.other_boldness,
+        "this-boldness": profile.this_boldness
+
+    }
+
+    return jsonDict
+
+
+def profilelist_to_json(profilelist):
+    """Erstellt aus einer Profilliste einen json-String."""
+
+    parsed_profiles = list()
+
+    jsonObject = {
+        "profiles": parsed_profiles
+    }
+
+    for profile in profilelist:
+
+        parsed_profile = profile_to_dict(profile)
+        parsed_profiles.append(parsed_profile)
+
+    json_string = json.dumps(jsonObject, indent=4)
+    return json_string
+
+
+def write_profile_to_file(profile, file):
+    """Schreibt das gegebene Profil in eine neue Konfigurationsdatei."""
+
+    f = open(file, "w")
+    profilelist = list()
+    profilelist.append(profile)
+
+    jsonStr = profilelist_to_json(profilelist)
+
+    f.write(jsonStr)
+    f.close()
+
+
+def make_default_profile():
+    """Erstellt ein Profil mit Standarteinstellungen."""
+
+    entry_default = Profile()
+    entry_default.name = "default"
+    entry_default.port = d_port
+    entry_default.baud = d_baud
+
+    entry_default.this_device = d_this_name
+    entry_default.this_color = Colors.get("RED")
+    entry_default.this_boldness = 1
+
+    entry_default.other_device = d_other_name
+    entry_default.other_color = Colors.get("BLUE")
+    entry_default.other_boldness = 1
+
+    profile_list.append(entry_default)
+
+    return entry_default
+
+
 def parse_config():
-    """Lade lokale oder globale Konfigurationsdatei"""
+    """Lade lokale oder globale Konfigurationsdatei."""
+
+    global profile_list
 
     configfile = None
     # suche als erstes im lokalen Ordner
 
     try:
-        configfile = open("config.json", "r")
+        configfile = open(config_name, "r")
         datei = True
     except IOError:
         datei = False
@@ -59,18 +184,40 @@ def parse_config():
 
     if not datei:
         try:
-            configfile = open("{}/.xcom/config.json".format(os.path.expanduser('~')), "r")
+            configfile = open("{}/.xcom/{}".format(os.path.expanduser('~'), config_name), "r")
         except IOError:
-            return None
+            return 0
 
     try:
         data = json.load(configfile)
     except json.decoder.JSONDecodeError:
-        return None
+        return 0
 
     configfile.close()
 
-    return data.get("profile-name"), data.get("port"), data.get("baudrate")
+    # fuege alle Profile der Liste hinzu, wenn keine da, gebe nichts zurueck
+
+    try:
+        for i in data["profiles"]:
+            entry = Profile()
+            entry.name = i.get("profile-name")
+            entry.port = i.get("port")
+            entry.baud = i.get("baudrate")
+            entry.this_device = i.get("this-name")
+            entry.other_device = i.get("other-name")
+
+            entry.this_color = Colors.get(i.get("this-color"))
+            entry.other_color = Colors.get(i.get("other-color"))
+
+            entry.other_boldness = i.get("other-boldness")
+            entry.this_boldness = i.get("this-boldness")
+
+            profile_list.append(entry)
+
+    except KeyError:
+        return 0
+
+    return len(profile_list)
 
 
 def print_config_name(name):
@@ -78,7 +225,7 @@ def print_config_name(name):
     if name is None:
         return
 
-    print_queue.put(("Nutze Profil: {}".format(name), "u"))
+    print_queue.put(("Nutze Profil: {}".format(name.name), "u"))
     print_data_rdy_flag.set()
 
 
@@ -165,6 +312,45 @@ def parse_input(erhalten, ser, mon, send_data_flag, serial_send_queue):  # verar
             mon.print_serial_info()
             get_serial_thread_numbers(ser)
             print_queue.put(("Aendere Port zu \"{}\"".format(port), 'i'))
+            print_data_rdy_flag.set()
+            return ParseCodes.CLEAR
+
+        elif befehl == "!pd":  # schreibt das default-profil in eine neue lokale Konfigurationsdatei
+
+            write_profile_to_file(make_default_profile(), config_name)
+
+            print_queue.put(("Schreibe default-Profil nach: \"{}/{}\"".format(os.getcwd(), config_name), 'u'))
+            print_data_rdy_flag.set()
+
+            return ParseCodes.CLEAR
+
+        elif befehl == "!pr":  # aendere Profil
+
+            try:
+                profilename = erhalten.split()[1]
+            except IndexError:
+                print_queue.put(("Profilnamen angeben!", "u"))
+                print_data_rdy_flag.set()
+                return ParseCodes.CLEAR
+
+            # pruefe ob Profil in Liste vorhanden
+            for i in profile_list:
+                if i.name == profilename:
+                    ser.kill()
+                    ser.init(i.port, i.baud)
+
+                    if not ser.connected:
+                        mon.print_serial_info()
+                        print_queue.put(("Verbindung mit Daten aus Profil {} nicht moeglich!".format(profilename), "u"))
+                        return ParseCodes.CLEAR
+
+                    print_config_name(i)
+                    mon.set_strings(i)
+                    mon.print_serial_info()
+                    return ParseCodes.CLEAR
+
+            # wenn nicht, gib Fehlermeldung aus
+            print_queue.put(("Konnte kein Profil \"{}\" finden!".format(profilename), "u"))
             print_data_rdy_flag.set()
             return ParseCodes.CLEAR
 
@@ -300,23 +486,16 @@ def main():
     main_event_flag = threading.Event()
     send_data_flag = threading.Event()
 
-    port = d_port
-    baud = d_baud
+    make_default_profile()
+    parse_config()
 
-    conn_details = parse_config()
-
-    # pruefe, ob Datei geladen werden konnte
-    if conn_details is not None:
-
-        if conn_details[1] is not None:
-            port = conn_details[1]
-
-        if conn_details[2] is not None:
-            baud = conn_details[2]
+    profile = profile_list[-1]
+    port = profile.port
+    baud = profile.baud
 
     ser = SerialFunc(port, baud, serial_kill_flag, send_data_flag, serial_recv_queue, serial_send_queue,
                      main_event_flag)
-    mon = PrintFunc(print_kill_flag, print_data_rdy_flag, term_input_queue, print_queue, ser, main_event_flag)
+    mon = PrintFunc(print_kill_flag, print_data_rdy_flag, term_input_queue, print_queue, ser, main_event_flag, profile)
 
     if not ser.connected:
         print_queue.put(("Konnte keine Verbindung zum Port \"{}\" oeffnen!".format(port), "u"))
@@ -332,7 +511,7 @@ def main():
     main_thread_number = threading.get_native_id()
     main_event_flag.clear()
 
-    print_config_name(conn_details[0])
+    print_config_name(profile)
 
     while True:
 
